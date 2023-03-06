@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/he-man-david/prysm-geth-proxy/internals/configs"
 	"github.com/he-man-david/prysm-geth-proxy/internals/flags"
@@ -51,7 +53,21 @@ func gethProxy(c *cli.Context) error {
 		log.Printf("[main] failed to start proxy RPC servers :: ERR, %v", err)
 		return err
 	}
-	defer p.StopRPC()
 	
-	return nil
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-sigChan
+		log.Println("Shutting down PRYSM-GETH proxy server...")
+		p.StopRPC()
+		os.Exit(0)
+	}()
+
+	select {}
 }
+
+
+
+
+
+

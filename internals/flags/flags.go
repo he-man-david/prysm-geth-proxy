@@ -7,7 +7,7 @@ import (
 
 func NewCliApp() *cli.App {
 	cliapp := cli.NewApp()
-	cliapp.Name = "prysm-geth-proxy"
+	cliapp.Name = "proxy"
 	cliapp.Usage = "Proxy router for Prysm Consensus & Geth Execution clients"
 
 	cliapp.Flags = []cli.Flag{

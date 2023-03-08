@@ -24,16 +24,16 @@ type HttpConfig struct {
 	Modules            []string
 	CorsAllowedOrigins []string
 	Vhosts             []string
-	prefix             string // path prefix on which to mount http handler
-	jwtSecret          []byte // optional JWT secret
+	Prefix             string // path Prefix on which to mount http handler
+	JwtSecret          []byte // optional JWT secret
 }
 
 // wsConfig is the JSON-RPC/Websocket configuration
-type wsConfig struct {
+type WsConfig struct {
 	Origins   []string
 	Modules   []string
-	prefix    string // path prefix on which to mount ws handler
-	jwtSecret []byte // optional JWT secret
+	Prefix    string // path Prefix on which to mount ws handler
+	JwtSecret []byte // optional JWT secret
 }
 
 type RpcHandler struct {
@@ -56,13 +56,13 @@ type HttpServer struct {
 	httpHandler atomic.Value // *RpcHandler
 
 	// WebSocket handler things.
-	wsConfig  wsConfig
+	wsConfig  WsConfig
 	wsHandler atomic.Value // *RpcHandler
 
 	// These are set by setListenAddr.
 	endpoint string
 	host     string
-	port     int
+	Port     int
 
 	handlerNames map[string]string
 }
@@ -85,11 +85,11 @@ func (h *HttpServer) SetListenAddr(host string, port int) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	if h.listener != nil && (host != h.host || port != h.port) {
+	if h.listener != nil && (host != h.host || port != h.Port) {
 		return fmt.Errorf("HTTP server already running on %s", h.endpoint)
 	}
 
-	h.host, h.port = host, port
+	h.host, h.Port = host, port
 	h.endpoint = fmt.Sprintf("%s:%d", host, port)
 	return nil
 }
@@ -138,8 +138,8 @@ func (h *HttpServer) Start() error {
 
 	if h.wsAllowed() {
 		url := fmt.Sprintf("ws://%v", listener.Addr())
-		if h.wsConfig.prefix != "" {
-			url += h.wsConfig.prefix
+		if h.wsConfig.Prefix != "" {
+			url += h.wsConfig.Prefix
 		}
 		h.log.Info("WebSocket enabled", "url", url)
 	}
@@ -149,8 +149,8 @@ func (h *HttpServer) Start() error {
 	}
 	// Log http endpoint.
 	h.log.Info("HTTP server started",
-		"endpoint", listener.Addr(), "auth", (h.httpConfig.jwtSecret != nil),
-		"prefix", h.httpConfig.prefix,
+		"endpoint", listener.Addr(), "auth", (h.httpConfig.JwtSecret != nil),
+		"Prefix", h.httpConfig.Prefix,
 		"cors", strings.Join(h.httpConfig.CorsAllowedOrigins, ","),
 		"vhosts", strings.Join(h.httpConfig.Vhosts, ","),
 	)
@@ -176,7 +176,7 @@ func (h *HttpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// check if ws request and serve if ws enabled
 	ws := h.wsHandler.Load().(*RpcHandler)
 	if ws != nil && isWebsocket(r) {
-		if checkPath(r, h.wsConfig.prefix) {
+		if checkPath(r, h.wsConfig.Prefix) {
 			ws.ServeHTTP(w, r)
 		}
 		return
@@ -195,7 +195,7 @@ func (h *HttpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		if checkPath(r, h.httpConfig.prefix) {
+		if checkPath(r, h.httpConfig.Prefix) {
 			rpc.ServeHTTP(w, r)
 			return
 		}
@@ -203,29 +203,29 @@ func (h *HttpServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotFound)
 }
 
-// checkPath checks whether a given request URL matches a given path prefix.
+// checkPath checks whether a given request URL matches a given path Prefix.
 func checkPath(r *http.Request, path string) bool {
-	// if no prefix has been specified, request URL must be on root
+	// if no Prefix has been specified, request URL must be on root
 	if path == "" {
 		return r.URL.Path == "/"
 	}
-	// otherwise, check to make sure prefix matches
+	// otherwise, check to make sure Prefix matches
 	return len(r.URL.Path) >= len(path) && r.URL.Path[:len(path)] == path
 }
 
-// validatePrefix checks if 'path' is a valid configuration value for the RPC prefix option.
+// validatePrefix checks if 'path' is a valid configuration value for the RPC Prefix option.
 func validatePrefix(what, path string) error {
 	if path == "" {
 		return nil
 	}
 	if path[0] != '/' {
-		return fmt.Errorf(`%s RPC path prefix %q does not contain leading "/"`, what, path)
+		return fmt.Errorf(`%s RPC path Prefix %q does not contain leading "/"`, what, path)
 	}
 	if strings.ContainsAny(path, "?#") {
 		// This is just to avoid confusion. While these would match correctly (i.e. they'd
 		// match if URL-escaped into path), it's not easy to understand for users when
 		// setting that on the command line.
-		return fmt.Errorf("%s RPC path prefix %q contains URL meta-characters", what, path)
+		return fmt.Errorf("%s RPC path Prefix %q contains URL meta-characters", what, path)
 	}
 	return nil
 }
@@ -266,7 +266,7 @@ func (h *HttpServer) doStop() {
 	h.log.Info("HTTP server stopped", "endpoint", h.listener.Addr())
 
 	// Clear out everything to allow re-configuring it later.
-	h.host, h.port, h.endpoint = "", 0, ""
+	h.host, h.Port, h.endpoint = "", 0, ""
 	h.server, h.listener = nil, nil
 }
 
@@ -286,7 +286,7 @@ func (h *HttpServer) EnableRPC(apis []rpc.API, config HttpConfig) error {
 	}
 	h.httpConfig = config
 	h.httpHandler.Store(&RpcHandler{
-		Handler: NewHTTPHandlerStack(srv, config.CorsAllowedOrigins, config.Vhosts, config.jwtSecret),
+		Handler: NewHTTPHandlerStack(srv, config.CorsAllowedOrigins, config.Vhosts, config.JwtSecret),
 		server:  srv,
 	})
 	return nil
@@ -303,7 +303,7 @@ func (h *HttpServer) disableRPC() bool {
 }
 
 // enableWS turns on JSON-RPC over WebSocket on the server.
-func (h *HttpServer) EnableWS(apis []rpc.API, config wsConfig) error {
+func (h *HttpServer) EnableWS(apis []rpc.API, config WsConfig) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
@@ -317,7 +317,7 @@ func (h *HttpServer) EnableWS(apis []rpc.API, config wsConfig) error {
 	}
 	h.wsConfig = config
 	h.wsHandler.Store(&RpcHandler{
-		Handler: NewWSHandlerStack(srv.WebsocketHandler(config.Origins), config.jwtSecret),
+		Handler: NewWSHandlerStack(srv.WebsocketHandler(config.Origins), config.JwtSecret),
 		server:  srv,
 	})
 	return nil

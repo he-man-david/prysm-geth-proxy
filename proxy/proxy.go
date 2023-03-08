@@ -8,6 +8,7 @@ import (
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/he-man-david/prysm-geth-proxy/http"
+	cfg "github.com/he-man-david/prysm-geth-proxy/internals/configs"
 	rpcapis "github.com/he-man-david/prysm-geth-proxy/rpc_apis"
 	"github.com/he-man-david/prysm-geth-proxy/utils"
 )
@@ -23,10 +24,14 @@ type Proxy struct {
 	inprocHandler *rpc.Server // In-process RPC request handler to process the API requests
 }
 
-func New() (*Proxy, error) {
-	conf := 
+func New(conf *node.Config) (*Proxy, error) {
+	if conf.Logger == nil {
+		conf.Logger = log.New()
+	}
 	p := &Proxy{
 		inprocHandler: rpc.NewServer(),
+		config: conf,
+		log: conf.Logger,
 	}
 
 	// register required rpc APIs
@@ -49,7 +54,7 @@ func New() (*Proxy, error) {
 	return p, nil
 }
 
-func (p *Proxy) startRPC() error {
+func (p *Proxy) StartRPC() error {
 	var (
 		servers           []*http.HttpServer
 		openAPIs, allAPIs = p.getAPIs()
@@ -94,10 +99,10 @@ func (p *Proxy) startRPC() error {
 			return err
 		}
 		if err := server.EnableRPC(allAPIs, http.HttpConfig{
-			CorsAllowedOrigins: DefaultAuthCors,
+			CorsAllowedOrigins: cfg.DefaultAuthCors,
 			Vhosts:             p.config.AuthVirtualHosts,
-			Modules:            DefaultAuthModules,
-			Prefix:             DefaultAuthPrefix,
+			Modules:            cfg.DefaultAuthModules,
+			Prefix:             cfg.DefaultAuthPrefix,
 			JwtSecret:          secret,
 		}); err != nil {
 			return err
@@ -109,9 +114,9 @@ func (p *Proxy) startRPC() error {
 			return err
 		}
 		if err := server.EnableWS(allAPIs, http.WsConfig{
-			Modules:   DefaultAuthModules,
-			Origins:   DefaultAuthOrigins,
-			Prefix:    DefaultAuthPrefix,
+			Modules:   cfg.DefaultAuthModules,
+			Origins:   cfg.DefaultAuthOrigins,
+			Prefix:    cfg.DefaultAuthPrefix,
 			JwtSecret: secret,
 		}); err != nil {
 			return err
@@ -121,29 +126,26 @@ func (p *Proxy) startRPC() error {
 	}
 
 	// Set up HTTP.
-	if p.config.HTTPHost != "" {
-		// Configure legacy unauthenticated HTTP.
-		if err := initHttp(p.http, p.config.HTTPPort); err != nil {
-			return err
-		}
+	// Configure legacy unauthenticated HTTP.
+	if err := initHttp(p.http, p.config.HTTPPort); err != nil {
+		return err
 	}
+	
 	// Configure WebSocket.
-	if p.config.WSHost != "" {
-		// legacy unauthenticated
-		if err := initWS(p.config.WSPort); err != nil {
-			return err
-		}
+	// legacy unauthenticated
+	if err := initWS(p.config.WSPort); err != nil {
+		return err
 	}
+	
 	// Configure authenticated API
-	if len(openAPIs) != len(allAPIs) {
-		jwtSecret, err := utils.ObtainJWTSecret(p.config.JWTSecret)
-		if err != nil {
-			return err
-		}
-		if err := initAuth(p.config.AuthPort, jwtSecret); err != nil {
-			return err
-		}
+	jwtSecret, err := utils.ObtainJWTSecret(p.config.JWTSecret)
+	if err != nil {
+		return err
 	}
+	if err := initAuth(p.config.AuthPort, jwtSecret); err != nil {
+		return err
+	}
+	
 	// Start the servers
 	for _, server := range servers {
 		if err := server.Start(); err != nil {
@@ -164,7 +166,7 @@ func (p *Proxy) wsServerForPort(port int, authenticated bool) *http.HttpServer {
 	return wsServer
 }
 
-func (p *Proxy) stopRPC() {
+func (p *Proxy) StopRPC() {
 	p.http.Stop()
 	p.ws.Stop()
 	p.httpAuth.Stop()
